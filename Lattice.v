@@ -44,6 +44,8 @@ Proof.
   inversion H0.
 Qed.
 
+
+
 Lemma high_is_top :
   forall l,
     flows_to l High.
@@ -108,4 +110,14 @@ Lemma meet_is_least_upper_bound :
     flows_to (meet l l') u.
 Proof.
   destruct l; destruct l'; destruct u; intros; auto.
+Qed.
+
+Lemma flows_to_questionable :
+  forall l l' l'',
+    flows_to l l' ->
+    flows_to l l'' ->
+    flows_to l (meet l'' l').
+Proof.
+  destruct l; destruct l'; destruct l''; intros; try reflexivity.
+  inversion H0.
 Qed.

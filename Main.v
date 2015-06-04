@@ -1,5 +1,6 @@
 Require Import Arith List.
 Require Import "Lattice".
+Require Import "Environment".
 
 Inductive type : Type :=
 | Bool : label -> type
@@ -122,13 +123,11 @@ Fixpoint sub (v : expr) (x : nat) (e : expr) :=
       App (sub v x e1) (sub v x e2)
   end.
 
-  Inductive big_step : expr -> expr -> Prop :=
-| big_step_true :
-    forall l,
-      big_step (TT l) (TT l)
-| big_step_false :
-    forall l,
-      big_step (FF l) (FF l)
+Inductive big_step : expr -> expr -> Prop :=
+| big_step_val :
+    forall v,
+      value v ->
+      big_step v v
 | big_step_cond_true :
     forall e1 l1 e2 e3 v,
       big_step e1 (TT l1) ->
@@ -170,6 +169,25 @@ Proof.
   apply IHt1.
   apply IHt2.
   apply flows_to_refl.
+Qed.
+
+Lemma subtype_antisym :
+  forall t t',
+    subtype t t' ->
+    subtype t' t ->
+    t = t'.
+Proof.
+  intros t t' Hsub.
+  induction Hsub; intros.
+  inversion H0.
+  subst.
+  rewrite IHHsub1; auto.
+  rewrite IHHsub2; auto.
+  rewrite (flows_to_antisym l l'); auto.
+
+  inversion H0.
+  subst.
+  rewrite (flows_to_antisym l l'); auto.
 Qed.
 
 Lemma subtype_bool_left :
@@ -277,17 +295,6 @@ Proof.
   apply flows_to_trans with (l' := l'); assumption.
 Qed.
 
-Definition tctxt := list (nat * type).
-
-Fixpoint lookup (n : nat) (ctx : tctxt) : option type :=
-  match ctx with
-    | nil => None
-    | (n', t) :: ctx' =>
-      if beq_nat n n'
-      then Some t
-      else lookup n ctx'
-  end.
-
 Definition stamp_type t l :=
   match t with
     | Bool l' => Bool (meet l' l)
@@ -299,6 +306,17 @@ Definition type_with_label t l :=
     | Bool l' => l = l'
     | Arrow _ _ l' => l = l'
   end.
+
+Lemma all_types_have_label :
+  forall t, exists l,
+    type_with_label t l.
+Proof.
+  destruct t.
+  exists l; auto.
+  reflexivity.
+  exists l.
+  reflexivity.
+Qed.
 
 Lemma stamp_type_is_meet :
   forall t l l',
@@ -318,7 +336,41 @@ Proof.
   reflexivity.
 Qed.
 
-Inductive typing : tctxt -> expr -> type -> Prop :=
+Lemma stamp_preserves_subtype :
+  forall s l s',
+    subtype (stamp_type s l) s' ->
+    subtype s s'.
+Proof.
+  induction s; intros.
+  simpl in H.
+  apply subtype_bool_left in H.
+  destruct H.
+  destruct H.
+  subst.
+  apply TBoolSub.
+  apply flows_to_trans with (l' := (meet l l0)).
+  apply meet_is_upper_bound.
+  apply H0.
+
+  simpl in H.
+  apply subtype_arrow_left in H.
+  destruct H.
+  destruct H.
+  destruct H.
+  destruct H.
+  destruct H0.
+  destruct H1.
+  subst.
+  apply TFunSub.
+  apply H1.
+  apply H2.
+  apply flows_to_trans with (l' := (meet l l0)).
+  apply meet_is_upper_bound.
+  apply H0.
+Qed.
+
+
+Inductive typing : environment type -> expr -> type -> Prop :=
 | typing_true :
     forall c l l',
       flows_to l l' ->
@@ -342,7 +394,7 @@ Inductive typing : tctxt -> expr -> type -> Prop :=
       typing c (App e1 e2) s'
 | typing_abs :
     forall c x e s1' s1 s2 s2' l l',
-      typing ((x, s1) :: c) e s2 ->
+      typing (Extend type x s1 c) e s2 ->
       subtype s1' s1 ->
       subtype s2 s2' ->
       flows_to l l' ->
@@ -353,7 +405,600 @@ Inductive typing : tctxt -> expr -> type -> Prop :=
       subtype s s' ->
       typing c (Var x) s'.
 
-Lemma canonical_form_bool :
+Lemma typing_inversion_true :
+  forall c l s,
+    typing c (TT l) s ->
+    subtype (Bool l) s.
+Proof.
+  intros.
+  inversion H; subst.
+  apply TBoolSub.
+  apply H2.
+Qed.
+
+Lemma typing_inversion_false :
+  forall c l s,
+    typing c (FF l) s ->
+    subtype (Bool l) s.
+Proof.
+  intros.
+  inversion H; subst.
+  apply TBoolSub.
+  apply H2.
+Qed.
+
+Lemma typing_inversion_cond :
+  forall c e1 e2 e3 s l,
+    typing c (Cond e1 e2 e3) s ->
+    type_with_label s l ->
+    exists l' s',
+      typing c e1 (Bool l') /\
+      typing c e2 s' /\
+      typing c e3 s' /\
+      subtype (stamp_type s' l') s.
+Proof.
+  intros.
+  inversion H; subst.
+  exists l0.
+  exists s0.
+  split; auto.
+Qed.
+
+Lemma typing_inversion_var :
+  forall c x s,
+    typing c (Var x) s ->
+    exists s',
+      lookup x c = Some s' /\ subtype s' s.
+Proof.
+  intros.
+  inversion H; subst.
+  exists s0.
+  split; auto.
+Qed.
+
+Lemma typing_inversion_app :
+  forall c e1 e2 s l,
+    typing c (App e1 e2) s ->
+    type_with_label s l ->
+    exists l' s1 s2,
+      typing c e1 (Arrow s1 s2 l') /\
+      typing c e2 s1 /\
+      subtype (stamp_type s2 l') s.
+Proof.
+  intros.
+  inversion H; subst.
+  exists l0.
+  exists s2.
+  exists s0.
+  split; auto.
+Qed.
+
+Lemma typing_inversion_abs :
+  forall c x s e l u,
+    typing c (Abs x s e l) u ->
+    exists s' t' t,
+      subtype s' s /\
+      typing (Extend _ x s' c) e t /\
+      subtype t' t /\
+      subtype (Arrow s' t' l) u.
+Proof.
+  intros.
+  inversion H; subst.
+  exists s.
+  exists s2.
+  exists s2.
+  split.
+  apply subtype_refl.
+  split.
+  assumption.
+  split.
+  apply subtype_refl.
+  apply TFunSub; auto.
+Qed.
+
+  Lemma typing_is_context_invariant :
+  forall c c' e s,
+    env_equiv c c' ->
+    typing c e s ->
+    typing c' e s.
+Proof.
+  intros c c' e s Hequiv Htype.
+  revert c' Hequiv.
+  induction Htype; intros c' Hequiv.
+
+  apply typing_true.
+  assumption.
+
+  apply typing_false.
+  assumption.
+
+  apply typing_cond with (s := s)(l := l).
+  apply IHHtype1; assumption.
+  apply IHHtype2; assumption.
+  apply IHHtype3; assumption.
+  assumption.
+
+  apply typing_app with (s2 := s2)(s := s)(l := l).
+  apply IHHtype1; assumption.
+  apply IHHtype2; assumption.
+  assumption.
+
+  apply typing_abs with (s2 := s2).
+  apply IHHtype.
+  apply env_equiv_extend_eq.
+  apply Hequiv.
+  assumption.
+  assumption.
+  assumption.
+
+  apply typing_var with (s := s).
+  rewrite <- H.
+  symmetry.
+  apply Hequiv.
+  assumption.
+Qed.
+
+Inductive free_in : nat -> expr -> Prop :=
+| free_in_cond :
+    forall x e1 e2 e3,
+      (free_in x e1 \/ free_in x e2 \/ free_in x e3) ->
+      free_in x (Cond e1 e2 e3)
+| free_in_app :
+    forall x e1 e2,
+      (free_in x e1 \/ free_in x e2) ->
+      free_in x (App e1 e2)
+| free_in_var :
+    forall x,
+      free_in x (Var x)
+| free_in_abs :
+    forall x y s e l,
+      x <> y ->
+      free_in x e ->
+      free_in x (Abs y s e l).
+
+Lemma free_in_dec :
+  forall x e,
+    { free_in x e} + { ~ free_in x e }.
+Proof.
+  unfold not.
+  induction e.
+
+  right.
+  intros.
+  inversion H.
+
+  right.
+  intros.
+  inversion H.
+
+  destruct IHe1.
+  left.
+  apply free_in_cond.
+  left.
+  assumption.
+  destruct IHe2.
+  left.
+  apply free_in_cond.
+  right.
+  left.
+  assumption.
+  destruct IHe3.
+  left.
+  apply free_in_cond.
+  right.
+  right.
+  apply f1.
+  right.
+  intros.
+  inversion H; subst.
+  destruct H2.
+  auto.
+  destruct H0; auto.
+
+  case_eq (beq_nat x n).
+  intros.
+  apply beq_nat_true in H.
+  subst.
+  left.
+  apply free_in_var.
+  right.
+  intros.
+  inversion H0.
+  subst.
+  rewrite <- beq_nat_refl in H.
+  inversion H.
+
+  destruct IHe.
+  case_eq (beq_nat x n); intros.
+  apply beq_nat_true in H.
+  subst.
+  right.
+  intros.
+  inversion H.
+  auto.
+  left.
+  apply beq_nat_false in H.
+  apply free_in_abs; assumption.
+  right.
+  intros.
+  inversion H; auto.
+
+  destruct IHe1.
+  left.
+  apply free_in_app; auto.
+  destruct IHe2.
+  left.
+  apply free_in_app; auto.
+  right.
+  intros.
+  inversion H.
+  destruct H2; auto.
+Qed.
+
+Definition ctxt_approx c c' :=
+  forall x t,
+    (lookup x c = Some t ->
+     exists t',
+      lookup x c' = Some t' /\ subtype t t').
+
+Definition ctxt_equiv c c' :=
+  ctxt_approx c c' /\ ctxt_approx c' c.
+
+Lemma ctxt_equiv_sound :
+  forall e c c',
+    ctxt_equiv c c' ->
+    (forall x, free_in x e ->
+       lookup x c = lookup x c').
+Proof.
+  unfold ctxt_equiv.
+  unfold ctxt_approx.
+  intros.
+  destruct H.
+  case_eq (lookup x c); intros.
+  case_eq (lookup x c'); intros.
+  specialize (H x t H2).
+  specialize (H1 x t0 H3).
+  destruct H.
+  destruct H.
+  destruct H1.
+  destruct H1.
+  rewrite H1 in H2.
+  inversion H2.
+  subst.
+  clear H2.
+  rewrite H in H3.
+  inversion H3.
+  subst.
+  clear H3.
+  assert (t = t0).
+  apply subtype_antisym; auto.
+  subst.
+  reflexivity.
+
+  specialize (H x t H2).
+  destruct H.
+  destruct H.
+  rewrite H in H3.
+  inversion H3.
+
+  case_eq (lookup x c'); intros.
+  specialize (H1 x t H3).
+  destruct H1.
+  destruct H1.
+  rewrite H2 in H1.
+  inversion H1.
+
+  reflexivity.
+Qed.
+
+Lemma env_approx :
+  forall e c c' s s' l l',
+    typing c e s ->
+    type_with_label s l ->
+    ctxt_approx c c' ->
+    typing c' e s' ->
+    type_with_label s' l' ->
+    flows_to l l' ->
+    subtype s s'.
+Proof.
+  intros e c c' s s' l l' Htyp.
+  revert c' s' l l'.
+  induction Htyp; intros c' s'' l'' l''' Htwl Happx Htype' Htwl' Hflow.
+
+  simpl in Htwl.
+  apply typing_inversion_true in Htype'.
+  apply subtype_bool_left in Htype'.
+  destruct Htype'.
+  destruct H0.
+  subst.
+  simpl in Htwl'.
+  subst.
+  apply TBoolSub.
+  assumption.
+
+  simpl in Htwl.
+  apply typing_inversion_false in Htype'.
+  apply subtype_bool_left in Htype'.
+  destruct Htype'.
+  destruct H0.
+  subst.
+  simpl in Htwl'.
+  subst.
+  apply TBoolSub.
+  assumption.
+
+  apply typing_inversion_cond with (l := l''') in Htype'.
+  destruct Htype'.
+  destruct H0.
+  destruct H0.
+  destruct H1.
+  destruct H2.
+
+Lemma env_invariance :
+  forall e c c' s,
+    typing c e s ->
+    (forall x, free_in x e -> lookup x c = lookup x c') ->
+    typing c' e s.
+Proof.
+  intros e c c' s Htype.
+  revert c'.
+  induction Htype; intros.
+
+  apply typing_true.
+  assumption.
+
+  apply typing_false.
+  assumption.
+
+  apply typing_cond with (s := s)(l := l); auto.
+  apply (IHHtype1 c'); auto.
+  intros.
+  apply H0.
+  apply free_in_cond; auto.
+  apply (IHHtype2 c'); auto; intros.
+  apply H0.
+  apply free_in_cond; auto.
+  apply (IHHtype3 c'); auto.
+  intros.
+  apply H0.
+  apply free_in_cond; auto.
+
+  apply typing_app with (s2 := s2)(s := s)(l := l); auto.
+  apply IHHtype1; intros.
+  apply H0.
+  apply free_in_app; auto.
+  apply IHHtype2; intros.
+  apply H0.
+  apply free_in_app; auto.
+
+  apply typing_abs with (s2 := s2).
+  apply IHHtype.
+  intros.
+  simpl.
+  case_eq (beq_nat x0 x); intro Heq.
+  reflexivity.
+  apply H2.
+  apply free_in_abs.
+  apply beq_nat_false in Heq.
+  assumption.
+  apply H3.
+  assumption.
+  assumption.
+  assumption.
+
+  apply typing_var with (s := s).
+  rewrite <- H.
+  symmetry.
+  apply H1.
+  apply free_in_var.
+  assumption.
+Qed.
+
+Lemma free_in_env :
+  forall x e c s,
+    typing c e s ->
+    free_in x e ->
+    exists s', lookup x c = Some s'.
+Proof.
+  intros x e c s Htype.
+  revert x.
+  induction Htype; intros x' Hfree.
+  inversion Hfree.
+  inversion Hfree.
+  inversion Hfree.
+  destruct H2.
+  apply IHHtype1.
+  assumption.
+  destruct H2.
+  apply IHHtype2.
+  assumption.
+  apply IHHtype3.
+  assumption.
+
+  inversion Hfree.
+  destruct H2.
+  apply IHHtype1.
+  assumption.
+  apply IHHtype2.
+  assumption.
+
+  inversion Hfree; subst.
+  specialize (IHHtype x' H8).
+  destruct IHHtype.
+  apply beq_nat_false_iff in H5.
+  simpl in H2.
+  rewrite H5 in H2.
+  exists x0.
+  assumption.
+
+  inversion Hfree; subst.
+  exists s.
+  assumption.
+Qed.
+
+Lemma subsumption :
+  forall c e s s',
+    typing c e s ->
+    subtype s s' ->
+    typing c e s'.
+Proof.
+  intros c e s s' Htyp.
+  revert s'.
+  induction Htyp.
+
+  intros s' Htyp.
+  apply subtype_bool_left in Htyp.
+  destruct Htyp.
+  destruct H0.
+  subst.
+  apply typing_true.
+  apply flows_to_trans with (l' := l'); assumption.
+
+  intros s' Htyp.
+  apply subtype_bool_left in Htyp.
+  destruct Htyp.
+  destruct H0.
+  subst.
+  apply typing_false.
+  apply flows_to_trans with (l' := l'); assumption.
+
+  intros s'' Hsub.
+  apply typing_cond with (s := s)(l := l).
+  apply Htyp1.
+  apply Htyp2.
+  apply Htyp3.
+  apply subtype_trans with (t' := s').
+  apply H.
+  apply Hsub.
+
+  intros s'' Hsub.
+  apply typing_app with (s2 := s2)(s := s) (l := l).
+  apply Htyp1.
+  apply Htyp2.
+  apply subtype_trans with (t' := s').
+  assumption.
+  assumption.
+
+  intros s' Hsub.
+  apply subtype_arrow_left in Hsub.
+  destruct Hsub.
+  destruct H2.
+  destruct H2.
+  destruct H2.
+  destruct H3.
+  destruct H4.
+  subst.
+  apply typing_abs with (s2 := s2).
+  apply Htyp.
+  apply subtype_trans with (t' := s1'); assumption.
+  apply subtype_trans with (t' := s2'); assumption.
+  apply flows_to_trans with (l' := l'); assumption.
+
+  intros s'' Hsub.
+  apply typing_var with (s := s).
+  assumption.
+  apply subtype_trans with (t' := s'); assumption.
+Qed.
+
+
+Lemma substitution_lemma :
+  forall e v c x s s',
+    typing (Extend type x s' c) e s ->
+    typing (Empty type) v s' ->
+    typing c (sub v x e) s.
+Proof.
+  intros e v c x s s' Htype Htypev.
+  generalize dependent s.
+  generalize dependent c.
+  induction e; intros; simpl.
+
+  apply typing_inversion_true in Htype.
+  apply subtype_bool_left in Htype.
+  destruct Htype as [l' [Hx Hflow]].
+  subst.
+  apply typing_true; auto.
+
+  apply typing_inversion_false in Htype.
+  apply subtype_bool_left in Htype.
+  destruct Htype as [l' [Hx Hflow]].
+  subst.
+  apply typing_false; auto.
+
+  destruct (all_types_have_label s) as [l Hs].
+  apply typing_inversion_cond with (l := l) in Htype.
+  destruct Htype as [l' Htype].
+  destruct Htype as [s'' Htype].
+  destruct Htype as [He1 [He2 [He3 Hsub]]].
+  apply typing_cond with (s := s'')(l := l').
+  apply IHe1.
+  apply He1.
+  apply IHe2.
+  apply He2.
+  apply IHe3.
+  apply He3.
+  apply Hsub.
+  apply Hs.
+
+  apply typing_inversion_var in Htype.
+  destruct Htype as [s'' [Hfound Hsub]].
+  destruct (eq_nat_dec x n).
+  subst.
+  simpl in Hfound.
+  rewrite <- beq_nat_refl in Hfound.
+  inversion Hfound; subst.
+  rewrite <- beq_nat_refl.
+  apply subsumption with (s := s'').
+  apply env_invariance with (c := Empty _).
+  apply Htypev.
+  intros.
+  apply (free_in_env x) in Htypev.
+  destruct Htypev.
+  inversion H0.
+  apply H.
+  apply Hsub.
+  apply beq_nat_false_iff in n0.
+  rewrite n0.
+  apply typing_var with (s := s'').
+  simpl in Hfound.
+  rewrite NPeano.Nat.eqb_sym in Hfound.
+  rewrite n0 in Hfound.
+  assumption.
+  apply Hsub.
+
+  admit.
+
+  destruct (all_types_have_label s) as [l].
+  apply typing_inversion_app with (l := l) in Htype.
+  destruct Htype.
+  destruct H0.
+
+  apply typing_inversion_abs in Htype.
+  destruct Htype as [s1 [s2 [s2' [Hsubt [Htype [Hsubs2 Hsubs]]]]]].
+  apply subtype_arrow_left in Hsubs.
+  destruct Hsubs as [s1' [s2'' [l' [Hx [Hflow [Hsubs1 Hsub]]]]]].
+  subst.
+  destruct (eq_nat_dec x n).
+  subst.
+  rewrite <- beq_nat_refl.
+  apply typing_abs with (s2 := s2).
+  apply subsumption with (s := s2').
+  apply env_invariance with (c := (Extend _ n s1 (Extend _ n s' c))).
+  apply Htype.
+  intros.
+  rewrite env_shadow.
+  apply (free_in_env x) in Htype.
+  destruct Htype.
+  simpl.
+  destruct (eq_nat_dec x n).
+  subst.
+  simpl.
+  simpl in H0.
+  rewrite <- beq_nat_refl in H0.
+  inversion H0.
+  subst.
+  rewrite <- beq_nat_refl.
+
+  Lemma canonical_form_bool :
   forall c v l,
     value v ->
     typing c v (Bool l) ->
@@ -408,7 +1053,145 @@ Proof.
   assumption.
 Qed.
 
-Lemma foo :
+
+Fixpoint substitute s expr :=
+  match s with
+    | Empty => expr
+    | Extend x v s' =>
+      substitute s' (sub v x expr)
+  end.
+
+Lemma substitute_true :
+  forall s l,
+    substitute s (TT l) = TT l.
+Proof.
+  induction s.
+  reflexivity.
+  intros.
+  simpl.
+  apply IHs.
+Qed.
+
+Lemma substitute_false :
+  forall s l,
+    substitute s (FF l) = FF l.
+Proof.
+  induction s.
+  reflexivity.
+  intros.
+  simpl.
+  apply IHs.
+Qed.
+(*
+  | Var y =>
+    if beq_nat x y then v else e
+ *)
+Lemma substitute_var_found :
+  forall s x v,
+    lookup x s = Some v ->
+    substitute s (Var x) = v.
+Proof.
+  induction s.
+  intros.
+  inversion H.
+  destruct a as (x', v').
+  simpl.
+  destruct a.
+  remember (beq_nat n x).
+  destruct b.
+  symmetry in Heqb.
+  rewrite beq_nat_true_iff in Heqb.
+  subst.
+  simpl in H.
+  rewrite <- beq_nat_refl in H.
+  inversion H.
+  subst.
+
+
+Lemma substitue_var_not_found :
+  forall x s,
+    lookup x s = None ->
+    substitute s (Var x) = Var x.
+
+(*
+| Abs y t f l  =>
+      if beq_nat x y then e else Abs y t (sub v x f) l
+ *)
+
+Lemma substitute_cond :
+  forall s e1 e2 e3,
+    substitute s (Cond e1 e2 e3) = Cond (substitute s e1) (substitute s e2) (substitute s e3).
+Proof.
+  induction s.
+  reflexivity.
+  intros.
+  simpl.
+  destruct a.
+  rewrite IHs.
+  reflexivity.
+Qed.
+
+Lemma substitute_app :
+  forall s e1 e2,
+    substitute s (App e1 e2) = App (substitute s e1) (substitute s e2).
+Proof.
+  induction s.
+  intros.
+  reflexivity.
+  intros.
+  simpl.
+  destruct a.
+  rewrite IHs.
+  reflexivity.
+Qed.
+
+Definition satisfies sub ctxt :=
+  forall x t,
+    lookup x ctxt = Some t ->
+    exists v,
+      lookup x sub = Some v /\ typing ctxt v t.
+
+Lemma substition_lemma :
+  forall c e s g,
+    typing c e s ->
+    satisfies g c ->
+    typing c (substitute g e) s.
+Proof.
+  intros c e s g Htyp.
+  revert g.
+  induction Htyp.
+
+  intros g Hsat.
+  rewrite substitute_true.
+  apply typing_true.
+  apply H.
+
+  intros.
+  rewrite substitute_false.
+  apply typing_false.
+  apply H.
+
+  intros.
+  rewrite substitute_cond.
+  apply typing_cond with (s := s)(l:=l).
+  apply IHHtyp1; assumption.
+  apply IHHtyp2; assumption.
+  apply IHHtyp3; assumption.
+  apply H.
+
+  intros.
+  rewrite substitute_app.
+  apply typing_app with (s2 := s2)(s := s)(l := l).
+  apply IHHtyp1; assumption.
+  apply IHHtyp2; assumption.
+  apply H.
+
+  intros.
+  admit.
+  intros.
+  apply substitute_var_found.
+
+  Lemma foo :
   forall c v s l' l s',
     value_with_label v l ->
     typing c v s ->

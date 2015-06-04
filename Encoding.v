@@ -18,6 +18,7 @@ Qed.
 
 
 
+
 Fixpoint type_of_z_s z :=
   match z with
     | ZType t l => type_of_z_t t l
