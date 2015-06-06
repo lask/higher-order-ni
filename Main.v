@@ -961,85 +961,7 @@ Proof.
   destruct s; intros; simpl in H; subst; simpl; rewrite meet_l_l;  reflexivity.
 Qed.
 
-Lemma type_has_one_label :
-  forall s l l',
-    (type_with_label s l /\ type_with_label s l') ->
-    l = l'.
-Proof.
-  destruct s; simpl; intros.
-  destruct H.
-  subst.
-  reflexivity.
-
-  destruct H.
-  subst.
-  reflexivity.
-Qed.
-
-Lemma subtype_implies_label :
-  forall s s' l l' l'',
-    type_with_label s (meet l l') ->
-    type_with_label s' l'' ->
-    subtype s s' ->
-    flows_to (meet l l') l''.
-Proof.
-  intros.
-  destruct s.
-  simpl in H.
-  subst.
-  apply subtype_bool_left in H1.
-  destruct H1.
-  destruct H.
-  subst.
-  simpl in H0.
-  subst.
-  apply H1.
-
-  simpl in H.
-  subst.
-  apply subtype_arrow_left in H1.
-  destruct H1.
-  destruct H.
-  destruct H.
-  destruct H.
-  subst.
-  destruct H1.
-  destruct H1.
-  simpl in H0.
-  subst.
-  apply H.
-Qed.
-
-Lemma subtype_implies_label' :
-  forall s s' l l' l'',
-    type_with_label s (meet l l') ->
-    type_with_label s' l'' ->
-    subtype s s' ->
-    flows_to l' l''.
-Proof.
-  intros.
-  assert (flows_to (meet l l') l'').
-  apply (subtype_implies_label s s'); auto.
-  apply flows_to_trans with (l' := (meet l l')).
-  apply meet_is_upper_bound.
-  apply H2.
-Qed.
-
-Lemma subtype_implies_label'' :
-  forall s s' l,
-    subtype (stamp_type s l) s' ->
-    exists l',
-      type_with_label s' l' /\ flows_to l l'.
-Proof.
-  intros.
-  destruct (all_types_have_label s).
-  apply stamp_type_is_meet with (l' := l) in H0.
-  destruct (all_types_have_label s').
-  exists x0.
-  split; auto.
-  apply (subtype_implies_label' (stamp_type s l) s' x); auto.
-Qed.
-  Lemma canonical_form_bool :
+Lemma canonical_form_bool :
   forall c v l,
     value v ->
     typing c v (Bool l) ->
@@ -1234,28 +1156,6 @@ Proof.
   apply stamp_mono.
 Qed.
 
-Lemma abs_arrow :
-  forall x S1 s2 T1 T2 l,
-    typing (Empty _) (Abs x S1 s2 l) (Arrow T1 T2 l) ->
-    (subtype T1 S1 /\ typing (Extend _ x S1 (Empty _)) s2 T2).
-Proof.
-  intros.
-  apply typing_inversion_abs in H.
-  destruct H.
-  destruct H.
-  destruct H.
-  destruct H.
-  destruct H.
-  inversion H.
-  subst.
-  clear H.
-  destruct H0.
-  destruct H0.
-  destruct H1.
-  split; auto.
-  apply subsumption with (s := x2); auto.
-Qed.
-
 Lemma stamp_meet :
   forall s l1 l2 l' s',
     subtype (stamp_type (stamp_type s l1) l2) s' ->
@@ -1366,3 +1266,37 @@ Proof.
   apply subsumption with (s := s1'); auto.
   apply subtype_trans with (t' := s0); auto.
 Qed.
+
+Definition non_interference e :=
+  forall t x v1 v2 v,
+    type_with_label t High ->
+    typing (Extend _ x t (Empty _)) e (Bool Low) ->
+    typing (Empty _) v1 t ->
+    typing (Empty _) v2 t ->
+    ((big_step (sub v1 x e) v) <-> (big_step (sub v2 x e) v)).
+
+Fixpoint LR (sigma : label) (e1 e2 : expr) (t : type) : Prop :=
+  True.
+
+| BoolRel :
+    forall v1 v2 l,
+      value v1 ->
+      value v2 ->
+      typing (Empty _) v1 (Bool l) ->
+      typing (Empty _) v2 (Bool l) ->
+      (flows_to l sigma -> v1 = v2) ->
+      LR sigma v1 v2 (Bool l)
+| FunRel :
+    forall v1 v2 s1 s2 l,
+      value v1 ->
+      value v2 ->
+      typing (Empty _) v1 (Arrow s1 s2 l) ->
+      typing (Empty _) v2 (Arrow s1 s2 l) ->
+      (flows_to l sigma ->
+       forall v1' v2',
+         LR sigma v1' v2' s1 ->
+         CLR sigma (App v1 v1') (App v2 v2') (stamp_type s2 l)) ->
+      LR sigma v1 v2 (Arrow s1 s2 l)
+with CLR (sigma : label) : expr -> expr -> type -> Prop :=
+     | CompRel : forall e1 e2 t,
+                   CLR sigma e1 e2 t.
