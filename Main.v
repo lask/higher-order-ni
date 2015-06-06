@@ -39,11 +39,17 @@ Definition stamp expr label :=
 
 Lemma stamp_preserves_value :
   forall e l,
-    value (stamp e l) ->
+    value (stamp e l) <->
     value e.
 Proof.
-  intros e.
+  intros e l.
+  split; intro H.
   destruct e; intros; try inversion H.
+  apply value_true.
+  apply value_false.
+  apply value_abs.
+
+  destruct e; intros; try inversion H; subst; simpl.
   apply value_true.
   apply value_false.
   apply value_abs.
@@ -135,15 +141,36 @@ Inductive big_step : expr -> expr -> Prop :=
       big_step (Cond e1 e2 e3) (stamp v l1)
 | big_step_cond_false :
     forall e1 l1 e2 e3 v,
-      big_step e1 (TT l1) ->
+      big_step e1 (FF l1) ->
       big_step e2 v ->
       big_step (Cond e1 e2 e3) (stamp v l1)
 | big_step_app :
     forall e1 x s e l e2 v v',
       big_step e1 (Abs x s e l) ->
       big_step e2 v ->
-      big_step (sub v x e2) v' ->
+      big_step (sub v x e) v' ->
       big_step (App e1 e2) (stamp v' l).
+
+Lemma big_steps_to_value :
+  forall e v,
+    big_step e v ->
+    value v.
+Proof.
+  intros e v Hstep.
+  induction Hstep; subst; auto.
+  apply stamp_preserves_value with (l := l1); auto.
+  apply stamp_preserves_value; auto.
+  apply stamp_preserves_value; auto.
+Qed.
+
+Lemma big_step_trans :
+  forall e1 e2 e3,
+    big_step e1 e2 ->
+    big_step e2 e3 ->
+    big_step e1 e3.
+Proof.
+Admitted.
+
 
 Inductive subtype : type -> type -> Prop :=
 | TFunSub :
@@ -1066,32 +1093,6 @@ Proof.
   assumption.
 Qed.
 
-Lemma extend_sub :
-  forall s s1 s2 x c c' e,
-    typing c' e s ->
-    ctxt_approx c' (Extend _ x s1 c) ->
-    subtype s1 s2 ->
-    typing (Extend _ x s2 c) e s.
-  Proof.
-    intros s s1 s2 x c c' e Htyp.
-
-    induction Htyp; intros; subst.
-    intros; apply typing_true; auto.
-    intros; apply typing_false; auto.
-    intros; apply typing_cond with (s := s) (l := l); auto.
-    intros; apply typing_app with (s2 := s2) (s := s) (l := l); auto.
-
-    admit.
-    admit.
-    admit.
-
-    case_eq (beq_nat x0 x); intros.
-    apply beq_nat_true in H3.
-    subst.
-    apply typing_var with (s := s2).
-    apply lookup_extend_eq.
-  Admitted.
-
 Lemma substitution_lemma :
   forall e v c x s s',
     typing (Extend type x s' c) e s ->
@@ -1176,7 +1177,83 @@ Proof.
   apply H.
 Qed.
 
-Fixpoint substitute s expr :=
+Lemma stamp_typing :
+  forall l l' c v s,
+    flows_to l l' ->
+    typing c v s ->
+    typing c (stamp v l) (stamp_type s l').
+Proof.
+Admitted.
+
+Lemma preservation :
+  forall e s v,
+    typing (Empty _) e s ->
+    big_step e v ->
+    typing (Empty _) v s.
+Proof.
+  intros e s v Htype.
+  revert v.
+  remember (Empty type) as c.
+  generalize dependent Heqc.
+  induction Htype; intros Hc v Hstep; subst.
+
+  inversion Hstep; subst.
+  apply typing_true; auto.
+
+  inversion Hstep; subst.
+  apply typing_false; auto.
+
+  inversion Hstep; subst.
+  inversion H0.
+  specialize (IHHtype1 eq_refl (TT l1) H4).
+  apply typing_inversion_true in IHHtype1.
+  destruct IHHtype1 as [l' [Heq Hflow]].
+  inversion Heq.
+  subst.
+  apply subsumption with (s := (stamp_type s l')); auto.
+  apply stamp_typing; auto.
+
+  specialize (IHHtype1 eq_refl (FF l1) H4).
+  apply typing_inversion_false in IHHtype1.
+  destruct IHHtype1 as [l' [Heq Hflow]].
+  inversion Heq.
+  subst.
+  apply subsumption with (s := (stamp_type s l')); auto.
+  apply stamp_typing; auto.
+
+  inversion Hstep; subst; clear Hstep.
+  inversion H0.
+  specialize (IHHtype1 eq_refl (Abs x s0 e l0) H2).
+
+  apply typing_inversion_abs in IHHtype1.
+  destruct IHHtype1 as [s1 [s3 [s2' [l' [Heq [Hte [Hsubs1 [Hsubs2' Ht1]]]]]]]].
+  inversion Heq.
+  subst.
+  clear Heq.
+  specialize (IHHtype2 eq_refl).
+
+  apply substitution_lemma with (v := v0) in Hte.
+  apply subsumption with (s := (stamp_type s3 l')).
+  apply stamp_typing; auto.
+
+  specialize (IHHtype2 eq_refl v0 H3).
+
+  assumption.
+  admit.
+  admit.
+  admit.
+
+  inversion Hstep.
+  subst.
+  apply typing_abs with (s2 := s2); auto.
+
+  inversion Hstep.
+  subst.
+  inversion H1.
+Qed.
+
+
+  Fixpoint substitute s expr :=
   match s with
     | Empty => expr
     | Extend x v s' =>
@@ -1323,13 +1400,6 @@ Proof.
 Proof.
 Admitted.
 
-Lemma preservation :
-  forall c e s v,
-    typing c e s ->
-    big_step e v ->
-    value v ->
-    typing c v s.
-Proof.
   intros c e s v.
   intro Htyp.
   revert v.
