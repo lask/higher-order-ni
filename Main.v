@@ -135,15 +135,15 @@ Inductive big_step : expr -> expr -> Prop :=
       value v ->
       big_step v v
 | big_step_cond_true :
-    forall e1 l1 e2 e3 v,
-      big_step e1 (TT l1) ->
+    forall e1 l e2 e3 v,
+      big_step e1 (TT l) ->
       big_step e2 v ->
-      big_step (Cond e1 e2 e3) (stamp v l1)
+      big_step (Cond e1 e2 e3) (stamp v l)
 | big_step_cond_false :
-    forall e1 l1 e2 e3 v,
-      big_step e1 (FF l1) ->
+    forall e1 l e2 e3 v,
+      big_step e1 (FF l) ->
       big_step e2 v ->
-      big_step (Cond e1 e2 e3) (stamp v l1)
+      big_step (Cond e1 e2 e3) (stamp v l)
 | big_step_app :
     forall e1 x s e l e2 v v',
       big_step e1 (Abs x s e l) ->
@@ -1185,13 +1185,73 @@ Lemma stamp_typing :
 Proof.
 Admitted.
 
+Lemma abs_arrow :
+  forall x S1 s2 T1 T2 l,
+    typing (Empty _) (Abs x S1 s2 l) (Arrow T1 T2 l) ->
+    (subtype T1 S1 /\ typing (Extend _ x S1 (Empty _)) s2 T2).
+Proof.
+  intros.
+  apply typing_inversion_abs in H.
+  destruct H.
+  destruct H.
+  destruct H.
+  destruct H.
+  destruct H.
+  inversion H.
+  subst.
+  clear H.
+  destruct H0.
+  destruct H0.
+  destruct H1.
+  split; auto.
+  apply subsumption with (s := x2); auto.
+Qed.
+
 Lemma preservation :
   forall e s v,
     typing (Empty _) e s ->
     big_step e v ->
     typing (Empty _) v s.
 Proof.
-  intros e s v Htype.
+  induction e; intros s v Hte Hstep.
+
+  inversion Hstep; subst; auto.
+  inversion Hstep; subst; auto.
+
+  inversion Hstep; subst.
+  inversion H.
+  apply typing_inversion_cond with (l := l1) in Hte.
+  destruct Hte.
+  destruct H.
+  destruct H.
+  destruct H0.
+  destruct H1.
+  apply IHe2.
+  apply subsumption with (s := x0).
+  apply H0.
+  apply subtype_implies_label'' in H2.
+  destruct H2.
+  destruct H2.
+
+
+  intros e s v Htype Hstep.
+  generalize dependent s.
+  induction Hstep; intros s' Htype.
+  apply Htype.
+
+  destruct (all_types_have_label s').
+  eapply typing_inversion_cond in Htype.
+  destruct Htype.
+  destruct H0.
+  destruct H0.
+  destruct H1.
+  destruct H2.
+  rewrite stamp_idemp with (l := x) in H3; auto.
+  rewrite stamp_idemp with (l := x); auto.
+  apply stamp_typing.
+  specialize (IHHstep1 (Bool x0) H0).
+
+
   revert v.
   remember (Empty type) as c.
   generalize dependent Heqc.
