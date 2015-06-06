@@ -151,6 +151,34 @@ Inductive big_step : expr -> expr -> Prop :=
       big_step (sub v x e) v' ->
       big_step (App e1 e2) (stamp v' l).
 
+Lemma strong_big_step_ind :
+  forall P : expr -> expr -> Prop,
+    (forall v : expr, value v -> P v v) ->
+    (forall (e1 : expr) (l : label) (e2 e3 v : expr),
+       big_step e1 (TT l) ->
+       P e1 (TT l) ->
+       big_step e2 v ->
+       P e2 v ->
+       P (Cond e1 e2 e3) (stamp v l)) ->
+    (forall (e1 : expr) (l : label) (e2 e3 v : expr),
+       big_step e1 (FF l) ->
+       P e1 (FF l) ->
+       big_step e2 v ->
+       P e2 v ->
+       P (Cond e1 e2 e3) (stamp v l)) ->
+    (forall (e1 : expr) (x : nat) (s : type) (e : expr) (l : label) (e2 v v' : expr),
+       big_step e1 (Abs x s e l) ->
+       P e1 (Abs x s e l) ->
+       big_step e2 v ->
+       P e2 v ->
+       big_step (sub v x e) v' ->
+       P (sub v x e) v'
+       -> P (App e1 e2) (stamp v' l)) ->
+    forall e e0 : expr, big_step e e0 -> P e e0.
+Proof.
+ exact big_step_ind.
+Qed.
+
 Lemma big_steps_to_value :
   forall e v,
     big_step e v ->
@@ -158,19 +186,10 @@ Lemma big_steps_to_value :
 Proof.
   intros e v Hstep.
   induction Hstep; subst; auto.
-  apply stamp_preserves_value with (l := l1); auto.
+  apply stamp_preserves_value with (l := l); auto.
   apply stamp_preserves_value; auto.
   apply stamp_preserves_value; auto.
 Qed.
-
-Lemma big_step_trans :
-  forall e1 e2 e3,
-    big_step e1 e2 ->
-    big_step e2 e3 ->
-    big_step e1 e3.
-Proof.
-Admitted.
-
 
 Inductive subtype : type -> type -> Prop :=
 | TFunSub :
@@ -443,9 +462,10 @@ Inductive typing : environment type -> expr -> type -> Prop :=
       subtype (stamp_type s l) s' ->
       typing c (Cond e1 e2 e3) s'
 | typing_app :
-    forall c e1 e2 s2 s s' l,
+    forall c e1 e2 s2 s2' s s' l,
       typing c e1 (Arrow s2 s l) ->
-      typing c e2 s2 ->
+      typing c e2 s2' ->
+      subtype s2' s2 ->
       subtype (stamp_type s l) s' ->
       typing c (App e1 e2) s'
 | typing_abs :
@@ -516,15 +536,17 @@ Lemma typing_inversion_app :
   forall c e1 e2 s l,
     typing c (App e1 e2) s ->
     type_with_label s l ->
-    exists l' s1 s2,
+    exists l' s1 s1' s2,
       typing c e1 (Arrow s1 s2 l') /\
-      typing c e2 s1 /\
+      typing c e2 s1' /\
+      subtype s1' s1 /\
       subtype (stamp_type s2 l') s.
 Proof.
   intros.
   inversion H; subst.
   exists l0.
   exists s2.
+  exists s2'.
   exists s0.
   split; auto.
 Qed.
@@ -557,36 +579,23 @@ Proof.
   revert c' Hequiv.
   induction Htype; intros c' Hequiv.
 
-  apply typing_true.
-  assumption.
+  apply typing_true; auto.
 
-  apply typing_false.
-  assumption.
+  apply typing_false; auto.
 
-  apply typing_cond with (s := s)(l := l).
-  apply IHHtype1; assumption.
-  apply IHHtype2; assumption.
-  apply IHHtype3; assumption.
-  assumption.
+  apply typing_cond with (s := s)(l := l); auto.
 
-  apply typing_app with (s2 := s2)(s := s)(l := l).
-  apply IHHtype1; assumption.
-  apply IHHtype2; assumption.
-  assumption.
+  apply typing_app with (s2 := s2)(s := s)(l := l)(s2' := s2'); auto.
 
-  apply typing_abs with (s2 := s2).
+  apply typing_abs with (s2 := s2); auto.
   apply IHHtype.
   apply env_equiv_extend_eq.
   apply Hequiv.
-  assumption.
-  assumption.
-  assumption.
 
-  apply typing_var with (s := s).
+  apply typing_var with (s := s); auto.
   rewrite <- H.
   symmetry.
   apply Hequiv.
-  assumption.
 Qed.
 
 Inductive free_in : nat -> expr -> Prop :=
@@ -815,15 +824,15 @@ Proof.
   apply H0.
   apply free_in_cond; auto.
 
-  apply typing_app with (s2 := s2)(s := s)(l := l); auto.
+  apply typing_app with (s2 := s2)(s := s)(l := l)(s2' := s2'); auto.
   apply IHHtype1; intros.
-  apply H0.
+  apply H1.
   apply free_in_app; auto.
   apply IHHtype2; intros.
-  apply H0.
+  apply H1.
   apply free_in_app; auto.
 
-  apply typing_abs with (s2 := s2).
+  apply typing_abs with (s2 := s2); auto.
   apply IHHtype.
   intros.
   simpl.
@@ -834,16 +843,12 @@ Proof.
   apply beq_nat_false in Heq.
   assumption.
   apply H3.
-  assumption.
-  assumption.
-  assumption.
 
-  apply typing_var with (s := s).
+  apply typing_var with (s := s); auto.
   rewrite <- H.
   symmetry.
   apply H1.
   apply free_in_var.
-  assumption.
 Qed.
 
 Lemma free_in_env :
@@ -868,7 +873,7 @@ Proof.
   assumption.
 
   inversion Hfree.
-  destruct H2.
+  destruct H3.
   apply IHHtype1.
   assumption.
   apply IHHtype2.
@@ -924,12 +929,8 @@ Proof.
   apply Hsub.
 
   intros s'' Hsub.
-  apply typing_app with (s2 := s2)(s := s) (l := l).
-  apply Htyp1.
-  apply Htyp2.
-  apply subtype_trans with (t' := s').
-  assumption.
-  assumption.
+  apply typing_app with (s2 := s2)(s := s) (l := l)(s2' := s2'); auto.
+  apply subtype_trans with (t' := s'); auto.
 
   intros s' Hsub.
   apply subtype_arrow_left in Hsub.
@@ -1170,20 +1171,68 @@ Proof.
   apply H.
 
   destruct (all_types_have_label s) as [l].
-  apply typing_inversion_app with (l := l) in Htype.
+  apply typing_inversion_app with (l := l) in Htype; auto.
 
-  destruct Htype as [l' [s1 [s2 [He1 [He2 Hsub]]]]].
-  apply typing_app with (s2 := s1) (s := s2) (l := l'); auto.
-  apply H.
+  destruct Htype as [l' [s1 [s1' [s2 [He1 [He2 [Hsub1 Hsub2]]]]]]].
+  apply typing_app with (s2 := s1) (s := s2) (l := l')(s2' := s1'); auto.
+Qed.
+
+Lemma stamp_mono :
+  forall s l,
+    subtype s (stamp_type s l).
+Proof.
+  destruct s; intros; simpl.
+  apply TBoolSub.
+  apply meet_is_upper_bound.
+  apply TFunSub.
+  apply subtype_refl.
+  apply subtype_refl.
+  apply meet_is_upper_bound.
 Qed.
 
 Lemma stamp_typing :
   forall l l' c v s,
-    flows_to l l' ->
     typing c v s ->
+    flows_to l l' ->
     typing c (stamp v l) (stamp_type s l').
 Proof.
-Admitted.
+  intros l l' c v s Htype.
+  revert l l'.
+  inversion Htype; subst; intros l'' l''' Hflow; simpl.
+
+  apply typing_true.
+  apply meet_is_least_upper_bound.
+  apply flows_to_trans with (l' := l'); auto.
+  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := l'''); auto.
+  apply meet_is_upper_bound.
+
+  apply typing_false.
+  apply meet_is_least_upper_bound.
+  apply flows_to_trans with (l' := l'); auto.
+  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := l'''); auto.
+  apply meet_is_upper_bound.
+
+  apply typing_cond with (s := s0)(l := l); auto.
+  apply subtype_trans with (t' := s); auto.
+  apply stamp_mono.
+
+  apply typing_app with (s2 := s2)(s2' := s2')(s := s0)(l := l); auto.
+  apply subtype_trans with (t' := s); auto.
+  apply stamp_mono.
+
+  apply typing_abs with (s2 := s2); auto.
+  apply meet_is_least_upper_bound; auto.
+  apply flows_to_trans with (l' := l'); auto.
+  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := l'''); auto.
+  apply meet_is_upper_bound.
+
+  apply typing_var with (s := s0); auto.
+  apply subtype_trans with (t' := s); auto.
+  apply stamp_mono.
+Qed.
 
 Lemma abs_arrow :
   forall x S1 s2 T1 T2 l,
@@ -1207,281 +1256,113 @@ Proof.
   apply subsumption with (s := x2); auto.
 Qed.
 
+Lemma stamp_meet :
+  forall s l1 l2 l' s',
+    subtype (stamp_type (stamp_type s l1) l2) s' ->
+    type_with_label s' l' ->
+    type_with_label s l1 ->
+    flows_to (meet l1 l2) l'.
+Proof.
+  destruct s; destruct s'; simpl; intros; subst.
+  rewrite <- meet_idempotent in H.
+  inversion H; subst; auto.
+  inversion H.
+  inversion H.
+  inversion H; subst.
+  rewrite <- meet_idempotent in H8.
+  apply H8.
+Qed.
+
 Lemma preservation :
-  forall e s v,
-    typing (Empty _) e s ->
+  forall e v s,
     big_step e v ->
+    typing (Empty _) e s ->
     typing (Empty _) v s.
 Proof.
-  induction e; intros s v Hte Hstep.
-
-  inversion Hstep; subst; auto.
-  inversion Hstep; subst; auto.
-
-  inversion Hstep; subst.
-  inversion H.
-  apply typing_inversion_cond with (l := l1) in Hte.
-  destruct Hte.
-  destruct H.
-  destruct H.
-  destruct H0.
-  destruct H1.
-  apply IHe2.
-  apply subsumption with (s := x0).
-  apply H0.
-  apply subtype_implies_label'' in H2.
-  destruct H2.
-  destruct H2.
-
-
-  intros e s v Htype Hstep.
-  generalize dependent s.
+  intros e v s Hstep.
+  revert s.
   induction Hstep; intros s' Htype.
+
   apply Htype.
 
-  destruct (all_types_have_label s').
-  eapply typing_inversion_cond in Htype.
-  destruct Htype.
-  destruct H0.
-  destruct H0.
-  destruct H1.
-  destruct H2.
-  rewrite stamp_idemp with (l := x) in H3; auto.
-  rewrite stamp_idemp with (l := x); auto.
+  destruct (all_types_have_label s') as [l' Hs'].
+  apply typing_inversion_cond with (l := l') in Htype; auto.
+  destruct Htype as [l'' [s [He1 [He2 [He3 Hsub]]]]].
+
+  destruct (all_types_have_label s) as [ls Hls].
+  rewrite (stamp_idemp _ _ Hls) in Hsub.
+  rewrite (stamp_idemp _ _ Hls) in He2.
+  rewrite (stamp_idemp _ _ Hls) in He3.
+  assert (flows_to (meet ls l'') l').
+  apply stamp_meet with (s := s)(s' := s'); auto.
+
+  specialize (IHHstep2 _ He2).
+  specialize (IHHstep1 _ He1).
+  apply typing_inversion_true in IHHstep1.
+  destruct IHHstep1 as [l''' [Heq Hflow]].
+  inversion Heq; subst; clear Heq.
+
+  rewrite (stamp_idemp _ _ Hs') in Hsub.
+  apply stamp_preserves_subtype in Hsub.
+  rewrite (stamp_idemp _ _ Hs').
   apply stamp_typing.
-  specialize (IHHstep1 (Bool x0) H0).
+  apply subsumption with (s := s); auto.
+  rewrite (stamp_idemp _ _ Hls).
+  apply IHHstep2.
+  rewrite <- (stamp_idemp _ _ Hls) in Hsub.
+  rewrite <- (stamp_idemp _ _ Hs') in Hsub.
+  apply Hsub.
+  apply flows_to_trans with (l' := l'''); auto.
+  apply flows_to_trans with (l' := (meet ls l''')); auto.
+  apply meet_is_upper_bound.
+
+  destruct (all_types_have_label s') as [l' Hs'].
+  apply typing_inversion_cond with (l := l') in Htype; auto.
+  destruct Htype as [l'' [s [He1 [He2 [He3 Hsub]]]]].
+
+  destruct (all_types_have_label s) as [ls Hls].
+  rewrite (stamp_idemp _ _ Hls) in Hsub.
+  rewrite (stamp_idemp _ _ Hls) in He2.
+  rewrite (stamp_idemp _ _ Hls) in He3.
+  assert (flows_to (meet ls l'') l').
+  apply stamp_meet with (s := s)(s' := s'); auto.
+
+  specialize (IHHstep2 _ He2).
+  specialize (IHHstep1 _ He1).
+  apply typing_inversion_false in IHHstep1.
+  destruct IHHstep1 as [l''' [Heq Hflow]].
+  inversion Heq; subst; clear Heq.
+
+  rewrite (stamp_idemp _ _ Hs') in Hsub.
+  apply stamp_preserves_subtype in Hsub.
+  rewrite (stamp_idemp _ _ Hs').
+  apply stamp_typing.
+  apply subsumption with (s := s); auto.
+  rewrite (stamp_idemp _ _ Hls).
+  apply IHHstep2.
+  rewrite <- (stamp_idemp _ _ Hls) in Hsub.
+  rewrite <- (stamp_idemp _ _ Hs') in Hsub.
+  apply Hsub.
+  apply flows_to_trans with (l' := l'''); auto.
+  apply flows_to_trans with (l' := (meet ls l''')); auto.
+  apply meet_is_upper_bound.
 
 
-  revert v.
-  remember (Empty type) as c.
-  generalize dependent Heqc.
-  induction Htype; intros Hc v Hstep; subst.
+  destruct (all_types_have_label s') as [l' Hl'].
+  apply typing_inversion_app with (l := l') in Htype; auto.
+  destruct Htype as [l'' [s1 [s1' [s2 [He1 [He2 [Hsub1 Hsub2]]]]]]].
 
-  inversion Hstep; subst.
-  apply typing_true; auto.
-
-  inversion Hstep; subst.
-  apply typing_false; auto.
-
-  inversion Hstep; subst.
-  inversion H0.
-  specialize (IHHtype1 eq_refl (TT l1) H4).
-  apply typing_inversion_true in IHHtype1.
-  destruct IHHtype1 as [l' [Heq Hflow]].
-  inversion Heq.
-  subst.
-  apply subsumption with (s := (stamp_type s l')); auto.
+  specialize (IHHstep1 _ He1).
+  apply typing_inversion_abs in IHHstep1.
+  destruct IHHstep1 as [s0 [s3 [s2' [l0 [Heq [Htype [Hsubs0 [Hsubs2' Hflow]]]]]]]].
+  inversion Heq; subst; clear Heq.
+  apply substitution_lemma with (v := v) in Htype.
+  specialize (IHHstep3 _ Htype).
+  apply subsumption with (s := (stamp_type s2' l0)).
   apply stamp_typing; auto.
-
-  specialize (IHHtype1 eq_refl (FF l1) H4).
-  apply typing_inversion_false in IHHtype1.
-  destruct IHHtype1 as [l' [Heq Hflow]].
-  inversion Heq.
-  subst.
-  apply subsumption with (s := (stamp_type s l')); auto.
-  apply stamp_typing; auto.
-
-  inversion Hstep; subst; clear Hstep.
-  inversion H0.
-  specialize (IHHtype1 eq_refl (Abs x s0 e l0) H2).
-
-  apply typing_inversion_abs in IHHtype1.
-  destruct IHHtype1 as [s1 [s3 [s2' [l' [Heq [Hte [Hsubs1 [Hsubs2' Ht1]]]]]]]].
-  inversion Heq.
-  subst.
-  clear Heq.
-  specialize (IHHtype2 eq_refl).
-
-  apply substitution_lemma with (v := v0) in Hte.
-  apply subsumption with (s := (stamp_type s3 l')).
-  apply stamp_typing; auto.
-
-  specialize (IHHtype2 eq_refl v0 H3).
-
-  assumption.
-  admit.
-  admit.
-  admit.
-
-  inversion Hstep.
-  subst.
-  apply typing_abs with (s2 := s2); auto.
-
-  inversion Hstep.
-  subst.
-  inversion H1.
+  apply subtype_trans with (t' := (stamp_type s3 l0)); auto.
+  apply stamp_l_preserves_subtype; auto.
+  apply IHHstep2; auto.
+  apply subsumption with (s := s1'); auto.
+  apply subtype_trans with (t' := s0); auto.
 Qed.
-
-
-  Fixpoint substitute s expr :=
-  match s with
-    | Empty => expr
-    | Extend x v s' =>
-      substitute s' (sub v x expr)
-  end.
-
-Lemma substitute_true :
-  forall s l,
-    substitute s (TT l) = TT l.
-Proof.
-  induction s.
-  reflexivity.
-  intros.
-  simpl.
-  apply IHs.
-Qed.
-
-Lemma substitute_false :
-  forall s l,
-    substitute s (FF l) = FF l.
-Proof.
-  induction s.
-  reflexivity.
-  intros.
-  simpl.
-  apply IHs.
-Qed.
-(*
-  | Var y =>
-    if beq_nat x y then v else e
- *)
-Lemma substitute_var_found :
-  forall s x v,
-    lookup x s = Some v ->
-    substitute s (Var x) = v.
-Proof.
-  induction s.
-  intros.
-  inversion H.
-  destruct a as (x', v').
-  simpl.
-  destruct a.
-  remember (beq_nat n x).
-  destruct b.
-  symmetry in Heqb.
-  rewrite beq_nat_true_iff in Heqb.
-  subst.
-  simpl in H.
-  rewrite <- beq_nat_refl in H.
-  inversion H.
-  subst.
-
-
-Lemma substitue_var_not_found :
-  forall x s,
-    lookup x s = None ->
-    substitute s (Var x) = Var x.
-
-(*
-| Abs y t f l  =>
-      if beq_nat x y then e else Abs y t (sub v x f) l
- *)
-
-Lemma substitute_cond :
-  forall s e1 e2 e3,
-    substitute s (Cond e1 e2 e3) = Cond (substitute s e1) (substitute s e2) (substitute s e3).
-Proof.
-  induction s.
-  reflexivity.
-  intros.
-  simpl.
-  destruct a.
-  rewrite IHs.
-  reflexivity.
-Qed.
-
-Lemma substitute_app :
-  forall s e1 e2,
-    substitute s (App e1 e2) = App (substitute s e1) (substitute s e2).
-Proof.
-  induction s.
-  intros.
-  reflexivity.
-  intros.
-  simpl.
-  destruct a.
-  rewrite IHs.
-  reflexivity.
-Qed.
-
-Definition satisfies sub ctxt :=
-  forall x t,
-    lookup x ctxt = Some t ->
-    exists v,
-      lookup x sub = Some v /\ typing ctxt v t.
-
-Lemma substition_lemma :
-  forall c e s g,
-    typing c e s ->
-    satisfies g c ->
-    typing c (substitute g e) s.
-Proof.
-  intros c e s g Htyp.
-  revert g.
-  induction Htyp.
-
-  intros g Hsat.
-  rewrite substitute_true.
-  apply typing_true.
-  apply H.
-
-  intros.
-  rewrite substitute_false.
-  apply typing_false.
-  apply H.
-
-  intros.
-  rewrite substitute_cond.
-  apply typing_cond with (s := s)(l:=l).
-  apply IHHtyp1; assumption.
-  apply IHHtyp2; assumption.
-  apply IHHtyp3; assumption.
-  apply H.
-
-  intros.
-  rewrite substitute_app.
-  apply typing_app with (s2 := s2)(s := s)(l := l).
-  apply IHHtyp1; assumption.
-  apply IHHtyp2; assumption.
-  apply H.
-
-  intros.
-  admit.
-  intros.
-  apply substitute_var_found.
-
-  Lemma foo :
-  forall c v s l' l s',
-    value_with_label v l ->
-    typing c v s ->
-    flows_to l' l ->
-    subtype (stamp_type s l) s' ->
-    typing c (stamp v l') s'.
-Proof.
-Admitted.
-
-  intros c e s v.
-  intro Htyp.
-  revert v.
-  induction Htyp; intros.
-
-  inversion H0; subst.
-  apply typing_true.
-  apply H.
-
-  inversion H0; subst.
-  apply typing_false.
-  apply H.
-
-  inversion H0; subst.
-  clear H0.
-  specialize (IHHtyp1 (TT l1) H6 (value_true l1)).
-  inversion IHHtyp1; subst.
-  clear IHHtyp1.
-
-  assert (value v0).
-  apply (stamp_preserves_value v0 l1 H1).
-  specialize (IHHtyp2 v0 H7 H0).
-  clear IHHtyp3 Htyp3 e3.
-  rename v0 into v.
-Admitted.
