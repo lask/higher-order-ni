@@ -2,19 +2,30 @@ Inductive label : Type :=
 | High
 | Low.
 
-Definition flows_to l1 l2 :=
+Definition meet l1 l2 :=
   match l1, l2 with
-    | High, High => True
-    | Low, High => True
-    | High, Low => False
-    | Low, Low => True
+    | High, High => High
+    | High, Low => High
+    | Low, High => High
+    | Low, Low => Low
   end.
+
+Lemma meet_idempotent :
+  forall l,
+    l = meet l l.
+Proof.
+  destruct l; reflexivity.
+Qed.
+
+Definition flows_to l1 l2 :=
+  l2 = meet l1 l2.
 
 Lemma flows_to_refl :
   forall l,
     flows_to l l.
 Proof.
-  intros l; case l; apply I.
+  unfold flows_to.
+  apply meet_idempotent.
 Qed.
 
 Lemma flows_to_trans :
@@ -28,6 +39,8 @@ Proof.
   destruct l';
   destruct l'';
   auto.
+  intros.
+  apply flows_to_refl.
 Qed.
 
 Lemma flows_to_antisym :
@@ -40,11 +53,7 @@ Proof.
   destruct l';
   intros;
   auto.
-  inversion H.
-  inversion H0.
 Qed.
-
-
 
 Lemma high_is_top :
   forall l,
@@ -60,13 +69,6 @@ Proof.
   destruct l; reflexivity.
 Qed.
 
-Definition meet l1 l2 :=
-  match l1, l2 with
-    | High, High => High
-    | High, Low => High
-    | Low, High => High
-    | Low, Low => Low
-  end.
 
 Lemma meet_high_r :
   forall l,
@@ -100,7 +102,7 @@ Lemma meet_is_upper_bound :
   forall l l',
     flows_to l (meet l l') /\ flows_to l' (meet l l').
 Proof.
-  destruct l; destruct l'; split; apply I.
+  destruct l; destruct l'; split; (auto ) || (unfold flows_to; reflexivity).
 Qed.
 
 Lemma meet_is_least_upper_bound :
@@ -120,4 +122,17 @@ Lemma flows_to_questionable :
 Proof.
   destruct l; destruct l'; destruct l''; intros; try reflexivity.
   inversion H0.
+Qed.
+
+Lemma meet_l_l :
+  forall l,
+    meet l l = l.
+Proof.
+  intros.
+  assert (flows_to (meet l l) l).
+  apply meet_is_least_upper_bound.
+  apply flows_to_refl.
+  apply flows_to_refl.
+  destruct (meet_is_upper_bound l l).
+  apply flows_to_antisym; assumption.
 Qed.

@@ -1,6 +1,26 @@
 Require Import "Main".
 Require Import "Lattice".
 
+Inductive z_type : Type :=
+| ZBool : type
+| ZArrow : sec_type -> sec_type -> type
+with
+z_sec_type :=
+| ZPair : type -> label -> sec_type.
+
+Inductive z_basic_value :=
+| ZTT : z_basic_value
+| ZFF : z_basic_value
+| ZAbs : nat -> z_sec_type -> z_expr -> z_basic_value
+with z_value :=
+| ZVar : nat -> z_value
+| ZSecValue : z_basic_value -> label -> z_value
+with z_expr :=
+| ZValue : z_value -> z_expr
+| ZApp : z_expr -> z_expr -> z_expr
+| ZCond : z_expr -> z_expr -> z_expr -> z_expr.
+
+
 Inductive z_s : Type :=
 | ZType : z_t -> label -> z_s
 with z_t : Type :=
@@ -14,9 +34,6 @@ Theorem z_s_ind' :
 Proof.
   apply z_s_ind.
 Qed.
-
-
-
 
 
 Fixpoint type_of_z_s z :=
