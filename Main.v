@@ -31,9 +31,9 @@ Definition value_with_label v l :=
 
 Definition stamp expr label :=
   match expr with
-    | TT l => TT (meet l label)
-    | FF l => FF (meet l label)
-    | Abs x t e l => Abs x t e (meet l label)
+    | TT l => TT (join l label)
+    | FF l => FF (join l label)
+    | Abs x t e l => Abs x t e (join l label)
     | _ => expr
   end.
 
@@ -55,10 +55,10 @@ Proof.
   apply value_abs.
 Qed.
 
-Lemma stamp_value_is_meet :
+Lemma stamp_value_is_join :
   forall v l l',
     value_with_label v l ->
-    value_with_label (stamp v l') (meet l l').
+    value_with_label (stamp v l') (join l l').
 Proof.
   intros v l l' Hv; unfold value_with_label.
   destruct Hv.
@@ -97,8 +97,8 @@ Lemma stamp_high_is_high :
     value_with_label (stamp v High) High.
 Proof.
   intros.
-  apply (stamp_value_is_meet v l High) in H.
-  rewrite meet_high_r in H.
+  apply (stamp_value_is_join v l High) in H.
+  rewrite join_high_r in H.
   apply H.
 Qed.
 
@@ -108,8 +108,8 @@ Lemma stamp_low_is_neutral :
     value_with_label (stamp v Low) l.
 Proof.
   intros.
-  apply (stamp_value_is_meet v l Low) in H.
-  rewrite meet_low_r in H.
+  apply (stamp_value_is_join v l Low) in H.
+  rewrite join_low_r in H.
   apply H.
 Qed.
 
@@ -343,8 +343,8 @@ Qed.
 
 Definition stamp_type t l :=
   match t with
-    | Bool l' => Bool (meet l' l)
-    | Arrow t1 t2 l' => Arrow t1 t2 (meet l' l)
+    | Bool l' => Bool (join l' l)
+    | Arrow t1 t2 l' => Arrow t1 t2 (join l' l)
   end.
 
 Definition type_with_label t l :=
@@ -364,10 +364,10 @@ Proof.
   reflexivity.
 Qed.
 
-Lemma stamp_type_is_meet :
+Lemma stamp_type_is_join :
   forall t l l',
     type_with_label t l ->
-    type_with_label (stamp_type t l') (meet l l').
+    type_with_label (stamp_type t l') (join l l').
 Proof.
   intros.
   destruct t.
@@ -394,8 +394,8 @@ Proof.
   destruct H.
   subst.
   apply TBoolSub.
-  apply flows_to_trans with (l' := (meet l l0)).
-  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := (join l l0)).
+  apply join_is_upper_bound.
   apply H0.
 
   simpl in H.
@@ -410,8 +410,8 @@ Proof.
   apply TFunSub.
   apply H1.
   apply H2.
-  apply flows_to_trans with (l' := (meet l l0)).
-  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := (join l l0)).
+  apply join_is_upper_bound.
   apply H0.
 Qed.
 
@@ -427,8 +427,8 @@ Proof.
   subst.
   simpl.
   apply TBoolSub.
-  destruct (meet_is_upper_bound x l0).
-  apply meet_is_least_upper_bound; auto.
+  destruct (join_is_upper_bound x l0).
+  apply join_is_least_upper_bound; auto.
   apply flows_to_trans with (l' := x); auto.
 
   apply subtype_arrow_left in H.
@@ -440,8 +440,8 @@ Proof.
   destruct H1.
   subst.
   apply TFunSub; auto.
-  destruct (meet_is_upper_bound x1 l0); auto.
-  apply meet_is_least_upper_bound; auto.
+  destruct (join_is_upper_bound x1 l0); auto.
+  apply join_is_least_upper_bound; auto.
   apply flows_to_trans with (l' := x1); auto.
 Qed.
 
@@ -775,7 +775,7 @@ Proof.
   simpl in Htwl.
   subst.
   apply TBoolSub.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 
   simpl in Htwl.
   apply typing_inversion_false in Htype.
@@ -785,7 +785,7 @@ Proof.
   simpl in Htwl.
   subst.
   apply TBoolSub.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 
   apply typing_inversion_cond with (l := l) in Htype.
   destruct Htype as [l' H0].
@@ -958,7 +958,7 @@ Lemma stamp_idemp :
     type_with_label s l ->
     s = (stamp_type s l).
 Proof.
-  destruct s; intros; simpl in H; subst; simpl; rewrite meet_l_l;  reflexivity.
+  destruct s; intros; simpl in H; subst; simpl; rewrite join_l_l;  reflexivity.
 Qed.
 
 Lemma canonical_form_bool :
@@ -1105,11 +1105,11 @@ Lemma stamp_mono :
 Proof.
   destruct s; intros; simpl.
   apply TBoolSub.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
   apply TFunSub.
   apply subtype_refl.
   apply subtype_refl.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 Qed.
 
 Lemma stamp_typing :
@@ -1123,18 +1123,18 @@ Proof.
   inversion Htype; subst; intros l'' l''' Hflow; simpl.
 
   apply typing_true.
-  apply meet_is_least_upper_bound.
+  apply join_is_least_upper_bound.
   apply flows_to_trans with (l' := l'); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
   apply flows_to_trans with (l' := l'''); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 
   apply typing_false.
-  apply meet_is_least_upper_bound.
+  apply join_is_least_upper_bound.
   apply flows_to_trans with (l' := l'); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
   apply flows_to_trans with (l' := l'''); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 
   apply typing_cond with (s := s0)(l := l); auto.
   apply subtype_trans with (t' := s); auto.
@@ -1145,31 +1145,31 @@ Proof.
   apply stamp_mono.
 
   apply typing_abs with (s2 := s2); auto.
-  apply meet_is_least_upper_bound; auto.
+  apply join_is_least_upper_bound; auto.
   apply flows_to_trans with (l' := l'); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
   apply flows_to_trans with (l' := l'''); auto.
-  apply meet_is_upper_bound.
+  apply join_is_upper_bound.
 
   apply typing_var with (s := s0); auto.
   apply subtype_trans with (t' := s); auto.
   apply stamp_mono.
 Qed.
 
-Lemma stamp_meet :
+Lemma stamp_join :
   forall s l1 l2 l' s',
     subtype (stamp_type (stamp_type s l1) l2) s' ->
     type_with_label s' l' ->
     type_with_label s l1 ->
-    flows_to (meet l1 l2) l'.
+    flows_to (join l1 l2) l'.
 Proof.
   destruct s; destruct s'; simpl; intros; subst.
-  rewrite <- meet_idempotent in H.
+  rewrite <- join_idempotent in H.
   inversion H; subst; auto.
   inversion H.
   inversion H.
   inversion H; subst.
-  rewrite <- meet_idempotent in H8.
+  rewrite <- join_idempotent in H8.
   apply H8.
 Qed.
 
@@ -1193,8 +1193,8 @@ Proof.
   rewrite (stamp_idemp _ _ Hls) in Hsub.
   rewrite (stamp_idemp _ _ Hls) in He2.
   rewrite (stamp_idemp _ _ Hls) in He3.
-  assert (flows_to (meet ls l'') l').
-  apply stamp_meet with (s := s)(s' := s'); auto.
+  assert (flows_to (join ls l'') l').
+  apply stamp_join with (s := s)(s' := s'); auto.
 
   specialize (IHHstep2 _ He2).
   specialize (IHHstep1 _ He1).
@@ -1213,8 +1213,8 @@ Proof.
   rewrite <- (stamp_idemp _ _ Hs') in Hsub.
   apply Hsub.
   apply flows_to_trans with (l' := l'''); auto.
-  apply flows_to_trans with (l' := (meet ls l''')); auto.
-  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := (join ls l''')); auto.
+  apply join_is_upper_bound.
 
   destruct (all_types_have_label s') as [l' Hs'].
   apply typing_inversion_cond with (l := l') in Htype; auto.
@@ -1224,8 +1224,8 @@ Proof.
   rewrite (stamp_idemp _ _ Hls) in Hsub.
   rewrite (stamp_idemp _ _ Hls) in He2.
   rewrite (stamp_idemp _ _ Hls) in He3.
-  assert (flows_to (meet ls l'') l').
-  apply stamp_meet with (s := s)(s' := s'); auto.
+  assert (flows_to (join ls l'') l').
+  apply stamp_join with (s := s)(s' := s'); auto.
 
   specialize (IHHstep2 _ He2).
   specialize (IHHstep1 _ He1).
@@ -1244,8 +1244,8 @@ Proof.
   rewrite <- (stamp_idemp _ _ Hs') in Hsub.
   apply Hsub.
   apply flows_to_trans with (l' := l'''); auto.
-  apply flows_to_trans with (l' := (meet ls l''')); auto.
-  apply meet_is_upper_bound.
+  apply flows_to_trans with (l' := (join ls l''')); auto.
+  apply join_is_upper_bound.
 
 
   destruct (all_types_have_label s') as [l' Hl'].
