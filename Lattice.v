@@ -2,7 +2,7 @@ Inductive label : Type :=
 | High
 | Low.
 
-Definition meet l1 l2 :=
+Definition join l1 l2 :=
   match l1, l2 with
     | High, High => High
     | High, Low => High
@@ -10,22 +10,22 @@ Definition meet l1 l2 :=
     | Low, Low => Low
   end.
 
-Lemma meet_idempotent :
+Lemma join_idempotent :
   forall l,
-    l = meet l l.
+    l = join l l.
 Proof.
   destruct l; reflexivity.
 Qed.
 
 Definition flows_to l1 l2 :=
-  l2 = meet l1 l2.
+  l2 = join l1 l2.
 
 Lemma flows_to_refl :
   forall l,
     flows_to l l.
 Proof.
   unfold flows_to.
-  apply meet_idempotent.
+  apply join_idempotent.
 Qed.
 
 Lemma flows_to_trans :
@@ -70,46 +70,46 @@ Proof.
 Qed.
 
 
-Lemma meet_high_r :
+Lemma join_high_r :
   forall l,
-    meet l High = High.
+    join l High = High.
 Proof.
   destruct l; reflexivity.
 Qed.
 
-Lemma meet_high_l :
+Lemma join_high_l :
   forall l,
-    meet High l = High.
+    join High l = High.
 Proof.
   destruct l; reflexivity.
 Qed.
 
-Lemma meet_low_r :
+Lemma join_low_r :
   forall l,
-    meet l Low = l.
+    join l Low = l.
 Proof.
   destruct l; reflexivity.
 Qed.
 
-Lemma meet_low_l :
+Lemma join_low_l :
   forall l,
-    meet Low l = l.
+    join Low l = l.
 Proof.
   destruct l; reflexivity.
 Qed.
 
-Lemma meet_is_upper_bound :
+Lemma join_is_upper_bound :
   forall l l',
-    flows_to l (meet l l') /\ flows_to l' (meet l l').
+    flows_to l (join l l') /\ flows_to l' (join l l').
 Proof.
   destruct l; destruct l'; split; (auto ) || (unfold flows_to; reflexivity).
 Qed.
 
-Lemma meet_is_least_upper_bound :
+Lemma join_is_least_upper_bound :
   forall l l' u,
     flows_to l u ->
     flows_to l' u ->
-    flows_to (meet l l') u.
+    flows_to (join l l') u.
 Proof.
   destruct l; destruct l'; destruct u; intros; auto.
 Qed.
@@ -118,21 +118,29 @@ Lemma flows_to_questionable :
   forall l l' l'',
     flows_to l l' ->
     flows_to l l'' ->
-    flows_to l (meet l'' l').
+    flows_to l (join l'' l').
 Proof.
   destruct l; destruct l'; destruct l''; intros; try reflexivity.
   inversion H0.
 Qed.
 
-Lemma meet_l_l :
-  forall l,
-    meet l l = l.
+Lemma join_comm :
+  forall l l',
+    join l l' = join l' l.
 Proof.
   intros.
-  assert (flows_to (meet l l) l).
-  apply meet_is_least_upper_bound.
-  apply flows_to_refl.
-  apply flows_to_refl.
-  destruct (meet_is_upper_bound l l).
-  apply flows_to_antisym; assumption.
+  destruct (join_is_upper_bound l l').
+  destruct (join_is_upper_bound l' l).
+  assert (flows_to (join l l') (join l' l)).
+  apply join_is_least_upper_bound; assumption.
+  assert (flows_to (join l' l) (join l l')).
+  apply join_is_least_upper_bound; assumption.
+  apply flows_to_antisym; auto.
+Qed.
+
+Lemma join_assoc :
+  forall l l' l'',
+    join (join l l') l'' = join l (join l' l'').
+Proof.
+  destruct l; destruct l'; destruct l''; reflexivity.
 Qed.
