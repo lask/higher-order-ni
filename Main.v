@@ -958,7 +958,7 @@ Lemma stamp_idemp :
     type_with_label s l ->
     s = (stamp_type s l).
 Proof.
-  destruct s; intros; simpl in H; subst; simpl; rewrite join_l_l;  reflexivity.
+  destruct s; intros; simpl in H; subst; simpl; rewrite <- join_idempotent;  reflexivity.
 Qed.
 
 Lemma canonical_form_bool :
@@ -1275,28 +1275,417 @@ Definition non_interference e :=
     typing (Empty _) v2 t ->
     ((big_step (sub v1 x e) v) <-> (big_step (sub v2 x e) v)).
 
-Fixpoint LR (sigma : label) (e1 e2 : expr) (t : type) : Prop :=
-  True.
+Require Import Coq.Program.Wf.
 
-| BoolRel :
-    forall v1 v2 l,
-      value v1 ->
-      value v2 ->
-      typing (Empty _) v1 (Bool l) ->
-      typing (Empty _) v2 (Bool l) ->
-      (flows_to l sigma -> v1 = v2) ->
-      LR sigma v1 v2 (Bool l)
-| FunRel :
-    forall v1 v2 s1 s2 l,
-      value v1 ->
-      value v2 ->
-      typing (Empty _) v1 (Arrow s1 s2 l) ->
-      typing (Empty _) v2 (Arrow s1 s2 l) ->
+Fixpoint size t : nat :=
+  match t with
+    | Bool _ => 0
+    | Arrow s1 s2 _ => S (size s1 + size s2)
+  end.
+
+Lemma stamp_size :
+  forall t l,
+    size (stamp_type t l) = size t.
+Proof.
+  destruct t; simpl; reflexivity.
+Qed.
+
+Fixpoint LR (sigma : label) (e1 e2 : expr) (t : type) : Prop.
+Proof.
+  eapply (typing (Empty _) e1 t /\ _).
+  Grab Existential Variables.
+  eapply (typing (Empty _) e2 t /\ _).
+  Grab Existential Variables.
+  eapply (exists (v1 : expr), _).
+  Grab Existential Variables.
+  eapply (exists (v2 : expr), _).
+  Grab Existential Variables.
+  destruct t.
+  apply (flows_to l sigma -> v1 = v2).
+  Print Scopes.
+  eapply (flows_to l sigma -> forall v1' v2', value v1' ->
+         value v2' -> LR sigma v1' v2' t1 -> LR sigma (App v1 v2') (App v2 v2') _)%type.
+  Grab Existential Variables.
+  case_eq t2.
+  intros.
+  apply (Bool (join l l0)).
+  intros.
+  apply (Arrow t t0 (join l l0)).
+Qed.
+  typing (Empty _) e1 t /\
+  typing (Empty _) e2 t /\
+  exists v1 v2,
+    big_step e1 v1 /\
+    big_step e2 v2 /\
+    match t with
+      | Bool l =>
+        flows_to l sigma -> v1 = v2
+      | Arrow s1 s2 l =>
+        flows_to l sigma ->
+        forall v1' v2',
+          value v1' ->
+          value v2' ->
+          LR sigma v1' v2' s1 ->
+          LR sigma (App v1 v1') (App v2 v2')
+             match s2 with
+               | Bool ls2 =>
+                 Bool (join ls2 l)
+               | Arrow t1 t2 ls2 =>
+                 Arrow t1 t2 (join ls2 l)
+             end
+    end.
+
+Next Obligation of LR_func.
+  simpl.
+  unfold lt.
+  apply le_n_S.
+  apply le_plus_l.
+Qed.
+
+Next Obligation of LR_func.
+  simpl.
+  rewrite stamp_size.
+  unfold lt.
+  apply le_n_S.
+  apply le_plus_r.
+Qed.
+
+Lemma unfold_LR_arrow :
+  forall sigma e1 e2 s1 s2 l,
+    LR sigma e1 e2 (Arrow s1 s2 l) ->
+    typing (Empty _) e1 (Arrow s1 s2 l) /\
+    typing (Empty _) e2 (Arrow s1 s2 l) /\
+    exists v1 v2,
+      big_step e1 v1 /\
+      big_step e2 v2 /\
       (flows_to l sigma ->
        forall v1' v2',
+         value v1' ->
+         value v2' ->
          LR sigma v1' v2' s1 ->
-         CLR sigma (App v1 v1') (App v2 v2') (stamp_type s2 l)) ->
-      LR sigma v1 v2 (Arrow s1 s2 l)
-with CLR (sigma : label) : expr -> expr -> type -> Prop :=
-     | CompRel : forall e1 e2 t,
-                   CLR sigma e1 e2 t.
+         LR sigma (App v1 v1') (App v2 v2') (stamp_type s2 l)).
+Proof.
+  intros.
+  unfold LR in H.
+  unfold LR_func in H.
+Abort.
+
+Fixpoint LR' (sigma : label) (e1 e2 : expr) (t : type) (l' : label) : Prop :=
+  typing (Empty _) e1 (stamp_type t l') /\
+  typing (Empty _) e2 (stamp_type t l') /\
+  exists v1 v2,
+    big_step e1 v1 /\
+    big_step e2 v2 /\
+    match t with
+      | Bool l =>
+        flows_to (join l l') sigma ->
+        v1 = v2
+      | Arrow s1 s2 l =>
+        flows_to (join l l') sigma ->
+        forall v1' v2' ls1,
+          type_with_label s1 ls1 ->
+          LR' sigma v1' v2' s1 ls1 ->
+          LR' sigma (App v1 v1') (App v2 v2') s2 l'
+    end.
+
+Lemma unfold_LR' :
+  forall sigma e1 e2 t l' ,
+    LR' sigma e1 e2 t l' =
+    (typing (Empty _) e1 (stamp_type t l') /\
+     typing (Empty _) e2 (stamp_type t l') /\
+     exists v1 v2,
+       big_step e1 v1 /\
+       big_step e2 v2 /\
+       match t with
+         | Bool l =>
+           flows_to (join l l') sigma ->
+           v1 = v2
+         | Arrow s1 s2 l =>
+           flows_to (join l l') sigma ->
+           forall v1' v2' ls1,
+             type_with_label s1 ls1 ->
+             LR' sigma v1' v2' s1 ls1 ->
+             LR' sigma (App v1 v1') (App v2 v2') s2 l'
+       end).
+Proof.
+  destruct t; reflexivity.
+Qed.
+
+Lemma join_rel :
+  forall sigma s l e1 e2 l',
+    type_with_label s l ->
+    flows_to l l' ->
+  LR' sigma e1 e2 s l' ->
+  LR' sigma e1 e2 s (join l l').
+Proof.
+  intros.
+  rewrite unfold_LR' in H1.
+  destruct H1.
+  destruct H2.
+  destruct H3.
+  destruct H3.
+  destruct H3.
+  destruct H4.
+  destruct s.
+  simpl in H.
+  subst.
+  simpl.
+  rewrite <- join_assoc.
+  rewrite <- join_idempotent.
+  split; auto.
+  split; auto.
+
+  exists x.
+  exists x0.
+  auto.
+
+  simpl in H; subst.
+  simpl.
+  rewrite <- join_assoc.
+  rewrite <- join_idempotent.
+
+  split; auto.
+  split; auto.
+  exists x.
+  exists x0.
+  split; auto.
+  split; auto.
+  intros.
+  rewrite <- H0.
+  apply H5 with (ls1 := ls1); auto.
+Qed.
+
+Lemma stamp_flow :
+  forall s l l',
+    type_with_label (stamp_type s l) l' ->
+    flows_to l l'.
+Proof.
+  destruct s; destruct l; destruct l'; simpl; auto; destruct l; intros; auto; try inversion H.
+Qed.
+
+Lemma join_comm :
+  forall l l',
+    join l l' = join l' l.
+Proof.
+  destruct l; destruct l'; reflexivity.
+Qed.
+
+Lemma subtype_stamp_mono :
+    forall s s' l l',
+      subtype s s' ->
+      flows_to l l' ->
+      subtype (stamp_type s l) (stamp_type s' l').
+Proof.
+  intros.
+  induction H; subst.
+  simpl.
+  apply TFunSub; auto.
+  destruct l0; destruct l; destruct l'0; destruct l'; try reflexivity.
+  inversion H2.
+  inversion H2.
+  inversion H0.
+
+  simpl.
+  apply TBoolSub.
+destruct l0; destruct l; destruct l'0; destruct l'; try reflexivity.
+  inversion H0.
+  inversion H.
+  inversion H0.
+Qed.
+
+Lemma subtype_relation :
+  forall sigma e1 e2 s s' ls ls',
+    type_with_label s ls ->
+    type_with_label s' ls' ->
+    flows_to ls ls' ->
+    subtype s s' ->
+    LR' sigma e1 e2 (stamp_type s ls) ls ->
+    LR' sigma e1 e2 (stamp_type s' ls') (join ls ls').
+Proof.
+  intros sigma e1 e2 s s' ls ls' Hs Hs' Hflow Hsub.
+  revert e1 e2.
+  generalize dependent ls.
+  generalize dependent ls'.
+  induction Hsub; intros ls' Hs' ls Hs Hflow e1 e2 Hrel; simpl in Hs, Hs'; subst.
+  simpl; rewrite <- join_idempotent; rewrite join_comm; rewrite join_assoc; rewrite <- join_idempotent.
+
+  simpl in Hrel; rewrite <-2 join_idempotent in Hrel.
+  destruct Hrel as [Htype1 [Htype2 [v1 [v2 [He1 [He2 Hrel]]]]]].
+
+  split.
+  apply subsumption with (s := Arrow s1 s2 l); auto.
+  apply TFunSub; auto.
+  apply join_is_upper_bound.
+  split.
+  apply subsumption with (s := Arrow s1 s2 l); auto.
+  apply TFunSub; auto.
+  apply join_is_upper_bound.
+
+  exists v1.
+  exists v2.
+  split; auto.
+  split; auto.
+  intros.
+  rewrite unfold_LR' in H2.
+  destruct H2.
+  destruct H3.
+  rewrite <- Hflow in H0.
+  assert (flows_to l sigma); auto.
+  apply flows_to_trans with (l' := l'); auto.
+    specialize (Hrel H5).
+
+  rewrite unfold_LR'.
+  split; auto.
+  apply typing_app with (s2 := s1')(s2' := s1')(s := s2)(l := l).
+  apply preservation with (e := e1); auto.
+  apply subsumption with (s := (Arrow s1 s2 l)).
+  assumption.
+  apply TFunSub.
+  auto.
+  apply subtype_refl.
+  apply flows_to_refl.
+  apply subsumption with (s := (stamp_type s1' ls1)); auto.
+  rewrite <- (stamp_idemp  _ _ H1).
+  apply subtype_refl.
+  apply subtype_refl.
+  rewrite <- Hflow.
+  apply subtype_stamp_mono; auto.
+
+  split; auto.
+  apply typing_app with (s2 := s1')(s2' := s1')(s := s2)(l := l).
+  apply preservation with (e := e2); auto.
+  apply subsumption with (s := (Arrow s1 s2 l)).
+  assumption.
+  apply TFunSub.
+  auto.
+  apply subtype_refl.
+  apply flows_to_refl.
+  apply subsumption with (s := (stamp_type s1' ls1)); auto.
+  rewrite <- (stamp_idemp  _ _ H1).
+  apply subtype_refl.
+  apply subtype_refl.
+  rewrite <- Hflow.
+  apply subtype_stamp_mono; auto.
+
+  specialize (Hrel
+
+
+  applyH42.
+
+  apply stamp_flow in H2.
+  unfold flows_to in H2.
+  rewrite H2.
+  rewrite join_assoc.
+  rewrite (join_comm l' ls3).
+  rewrite <- join_assoc.
+
+
+  apply IHHsub2.
+  rewrite unfold_LR' in H3.
+  rewrite unfold_LR'.
+  split.
+  eapply typing_app.
+  eapply preservation.
+  apply He1.
+  apply Htype1.
+  apply H3.
+  assumption.
+  admit.
+  split.
+  admit.
+
+  apply
+
+  intros sigma e1 e2 s s' ls ls' Hs Hs' Hsub.
+  revert s' sigma e1 e2 ls ls' Hs Hs' Hsub.
+  induction s; intros s' sigma e1 e2 ls ls' Hs Hs' Hsub Hrel; simpl in Hs, Hs'; subst.
+
+  apply subtype_bool_left in Hsub.
+  destruct Hsub.
+  destruct H.
+  subst.
+  simpl.
+  simpl in Hrel.
+  destruct Hrel.
+  destruct H1.
+  destruct H2 as [v1 H2].
+  destruct H2 as [v2 H2].
+  destruct H2.
+  destruct H3.
+  split.
+  apply subsumption with (s := Bool l); auto.
+  apply TBoolSub; auto.
+  split.
+  apply subsumption with (s := Bool l); auto.
+  apply TBoolSub; auto.
+  exists v1. exists v2.
+  split; auto.
+  split; auto.
+  intros.
+  apply H4.
+  apply flows_to_trans with (l' := x); auto.
+
+  apply subtype_arrow_left in Hsub.
+  destruct Hsub as [s1' [s2' [l' [Heq [Hflow [Hsub1 Hsub2]]]]]]; subst.
+  simpl in Hrel.
+  destruct Hrel as [Htype1 [Htype2 [v1 [v2 [He1 [He2 Hrel]]]]]].
+
+  simpl.
+  split.
+  apply subsumption with (s:= Arrow s1 s2 l); auto.
+  apply TFunSub; auto.
+  split.
+  apply subsumption with (s:= Arrow s1 s2 l); auto.
+  apply TFunSub; auto.
+  exists v1. exists v2.
+  split; auto.
+  split; auto.
+  intros.
+  rewrite unfold_LR'.
+  rewrite unfold_LR' in H2.
+  destruct H2.
+  destruct H3.
+  clear H4.
+  split.
+  eapply typing_app; auto.
+  apply preservation with (e := e1); auto.
+  apply Htype1; auto.
+  apply H2; auto.
+  assumption.
+
+  admit.
+
+  split.
+  eapply typing_app; auto.
+  apply preservation with (e := e2); auto.
+  apply Htype2.
+  apply H5.
+  assumption.
+  admit.
+
+  intros.
+  destruct s2'.
+  apply Hrel.
+
+  apply preservation with (s := Arrow s1 s2 l) in H0; auto.
+
+  admit.
+
+  simpl.
+  simpl in Hrel.
+  rewrite <- join_idempotent in Hrel.
+  rewrite <- join_idempotent.
+  split.
+  apply subsumption with (s := Bool l); auto.
+  apply Hrel.
+  apply TBoolSub; auto.
+  split.
+  apply subsumption with (s := Bool l); auto.
+  apply Hrel.
+  apply TBoolSub; auto.
+  intros.
+  destruct Hrel.
+  destruct H4.
+  apply H5; auto.
+  apply flows_to_trans with (l' := l'); auto.
+Qed.

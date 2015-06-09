@@ -124,17 +124,25 @@ Proof.
   inversion H0.
 Qed.
 
-Lemma join_l_l :
-  forall l,
-    join l l = l.
+Lemma join_comm :
+  forall l l',
+    join l l' = join l' l.
 Proof.
   intros.
-  assert (flows_to (join l l) l).
-  apply join_is_least_upper_bound.
-  apply flows_to_refl.
-  apply flows_to_refl.
-  destruct (join_is_upper_bound l l).
-  apply flows_to_antisym; assumption.
+  destruct (join_is_upper_bound l l').
+  destruct (join_is_upper_bound l' l).
+  assert (flows_to (join l l') (join l' l)).
+  apply join_is_least_upper_bound; assumption.
+  assert (flows_to (join l' l) (join l l')).
+  apply join_is_least_upper_bound; assumption.
+  apply flows_to_antisym; auto.
+Qed.
+
+Lemma join_assoc :
+  forall l l' l'',
+    join (join l l') l'' = join l (join l' l'').
+Proof.
+  destruct l; destruct l'; destruct l''; reflexivity.
 Qed.
 
 Lemma join_flows_to_join :
