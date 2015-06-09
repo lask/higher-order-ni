@@ -136,3 +136,32 @@ Proof.
   destruct (join_is_upper_bound l l).
   apply flows_to_antisym; assumption.
 Qed.
+
+Lemma join_flows_to_join :
+  forall l l' ls ls',
+    flows_to l l' ->
+    flows_to ls ls' ->
+    flows_to (join l ls) (join l' ls').
+Proof.
+  intros l l' ls ls' l_l'_flows_to ls_ls'_flows_to.
+
+  assert (flows_to l' (join l' ls')).
+    apply join_is_upper_bound.
+  assert (flows_to l (join l' ls')).
+    apply (flows_to_trans l l' (join l' ls')).
+    apply l_l'_flows_to.
+    apply H.
+  clear H.
+
+  assert (flows_to ls' (join l' ls')).
+    apply join_is_upper_bound.
+  assert (flows_to ls (join l' ls')).
+    apply (flows_to_trans ls ls' (join l' ls')).
+    apply ls_ls'_flows_to.
+    apply H.
+  clear H.
+
+  apply join_is_least_upper_bound.
+  apply H0.
+  apply H1.
+Qed.
