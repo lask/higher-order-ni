@@ -143,7 +143,6 @@ Lemma join_assoc :
     join (join l l') l'' = join l (join l' l'').
 Proof.
   destruct l; destruct l'; destruct l''; reflexivity.
-Qed.
 
 Lemma join_flows_to_join :
   forall l l' ls ls',
