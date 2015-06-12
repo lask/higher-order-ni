@@ -1267,7 +1267,7 @@ Proof.
   apply subtype_trans with (t' := s0); auto.
 Qed.
 
-Definition non_interference e :=
+Definition non_interference e := 
   forall t x v1 v2 v,
     type_with_label t High ->
     typing (Extend _ x t (Empty _)) e (Bool Low) ->
@@ -1461,13 +1461,6 @@ Lemma stamp_flow :
     flows_to l l'.
 Proof.
   destruct s; destruct l; destruct l'; simpl; auto; destruct l; intros; auto; try inversion H.
-Qed.
-
-Lemma join_comm :
-  forall l l',
-    join l l' = join l' l.
-Proof.
-  destruct l; destruct l'; reflexivity.
 Qed.
 
 Lemma subtype_stamp_mono :
